@@ -6,36 +6,45 @@ import (
 	"strings"
 	"time"
 	"strconv"
+	"errors"
+	"log/slog"
 )
 
-func getHostname() string {
+
+func getHostname() (string, error) {
 	file, err := os.Hostname()
 	if err != nil {
-		fmt.Println("Error at Hostname generation: ", err)
+		slog.Error("os.Hostname error", err)
+		return "", err 
 	}
-	return file 
+	return file, nil
 }
 
-func getUptime() time.Duration {
+func getUptime() (time.Duration, error) {
 	file, err := os.ReadFile("/proc/uptime")
 	if err != nil {
-		fmt.Println("Error at osReadFile proc/uptime :", err)
+		slog.Error("os.ReadFile at /proc/uptime", err)
+		return 0, err
 	}
 	uptime, _, verify := strings.Cut(string(file), ".")
 	if !verify {
-		fmt.Println("proc/uptime is empty")
+		slog.Error("proc/uptime is empty")
+		return 0, errors.New("Empty uptime from file")
 	}
 	uptimeDur, err := time.ParseDuration(uptime+"s")
 	if err != nil {
-		fmt.Println("Error at uptimeDur - ParsingDuration")
+		slog.Error("Error at uptimeDur - ParsingDuration")
+		return 0, errors.New("Error at uptimeDuration")
+
 	}
-	return uptimeDur 
+	return uptimeDur, nil
 }
 
-func getCpuInfo() string {
+func getCpuInfo() (string, error) {
 	file, err := os.ReadFile("/proc/cpuinfo")
 	if err != nil {
-		fmt.Println("Error at ReadFile cpuInfo: ", err)
+		slog.Error("Error at ReadFile cpuInfo: ", err)
+		return "", err
 	}
 	cpuInfoLines := strings.Lines(string(file))
 	var cpuInfo string
@@ -48,34 +57,38 @@ func getCpuInfo() string {
 	}
 	_, cpuInfoSuf, verify := strings.Cut(cpuInfo, " ") 
 	if !verify {
-		fmt.Println("Error while Cutting cpuInfo for cores")
+		slog.Error("Error while Cutting cpuInfo for cores")
+		return "", errors.New("Empty cpuInfoSuffix")
 	}
-	return cpuInfoSuf
+	return cpuInfoSuf, nil
 }
 
-func getKernelVer() string {
+func getKernelVer() (string, error) {
 	file, err := os.ReadFile("/proc/version")
 	if err != nil {
-		fmt.Println("Error at ReadFile Version: ", err)
+		slog.Error("Error at ReadFile Version: ", err)
+		return "", errors.New("Error at os.ReadFile KernelVer")
 	}
 	kernel := strings.Split(string(file), " ")
 	kernelVer := kernel[0] + " " +kernel[2]
-	return kernelVer
+	return kernelVer, nil
 }
 
-func helperMemoryInfo(memory string) float64 {
+func helperMemoryInfo(memory string) (float64, error) {
 	memoryFloat, err := strconv.Atoi(memory)
 	if err != nil {
-		fmt.Println("Error at helperMemoryInfo > strconv Atoi: ", err)
+		slog.Error("Error at helperMemoryInfo > strconv Atoi: ", err)
+		return 0.0, errors.New("Error at helperMemoryInfo")
 	}
 	memoryBack := float64(memoryFloat) / 1000000
-	return memoryBack 
+	return memoryBack, nil
 }
 
-func getMemoryInfo() (float64, float64) {
+func getMemoryInfo() (float64, float64, error) {
 	file, err := os.ReadFile("/proc/meminfo")
 	if err != nil {
-		fmt.Println("Error at ReadFile Meminfo: ", err)
+		slog.Error("Error at ReadFile Meminfo: ", err)
+		return 0.0, 0.0, errors.New("Error at os.ReadFile memInfo")	
 	}
 	memoryLines := strings.Split(string(file), "\n")
 	var totalMemory string
@@ -96,18 +109,48 @@ func getMemoryInfo() (float64, float64) {
 			break
 		}
 	}	
-	totalMemoryFloat := helperMemoryInfo(totalMemory)
-	freeMemoryFloat := helperMemoryInfo(freeMemory)
+	totalMemoryFloat, err := helperMemoryInfo(totalMemory)
+	if err != nil {
+		return 0.0, 0.0, err
+	}
+	freeMemoryFloat, err := helperMemoryInfo(freeMemory)
+	if err != nil {
+		return 0.0, 0.0, err
+	}
 
-	return totalMemoryFloat, freeMemoryFloat
+	return totalMemoryFloat, freeMemoryFloat, nil
 }
 
 func main() {
 	fmt.Println("=========================\n Linux System Monitor \n=========================")
-	fmt.Println("Hostname : ", getHostname()) 
-	fmt.Println("Kernel   : ", getKernelVer())
-	fmt.Println("Uptime   : ", getUptime())
-	fmt.Println("CPU Cores: ", getCpuInfo())
-	memTotal, memFree := getMemoryInfo()
+	hostname, err := getHostname()
+	if err != nil {
+		slog.Error("getHostname")
+		hostname = "Err"
+	}
+	kernelVer, err := getKernelVer()
+	if err != nil {
+		slog.Error("getKernelVer")
+		kernelVer = "Err"
+	}
+	uptime, err := getUptime()
+	if err != nil {
+		slog.Error("getUptime")
+		uptime = 000
+	}
+	cpuInfo, err := getCpuInfo()
+	if err != nil {
+		slog.Error("getCpuInfo")
+		cpuInfo = "Err"	
+	}
+	memTotal, memFree, err := getMemoryInfo()
+	if err != nil {
+		slog.Error("getMemoryInfo")
+		memTotal, memFree = 0.0, 0.0
+	}
+	fmt.Println("Hostname : ", hostname) 
+	fmt.Println("Kernel   : ", kernelVer)
+	fmt.Println("Uptime   : ", uptime)
+	fmt.Println("CPU Cores: ", cpuInfo)
 	fmt.Printf("Memory   : %.1f / %.1f Gb", memFree, memTotal)
 }
